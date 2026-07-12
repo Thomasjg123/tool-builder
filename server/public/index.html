@@ -3,11 +3,83 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Basic Website</title>
+    <title>Tmux Web Wrapper</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        .session-list { background: #f4f4f4; padding: 10px; border-radius: 4px; white-space: pre-wrap; min-height: 50px; }
+        .controls { margin-bottom: 20px; }
+        .error { color: red; }
+        .success { color: green; }
+        #message { margin-bottom: 10px; min-height: 1.2em; }
+    </style>
 </head>
 <body>
-    <h1>Hello World!</h1>
-    <p>This is a basic website running on 0.0.0.0:3000.</p>
+    <h1>Tmux Web Wrapper</h1>
+
+    <div class="controls">
+        <input type="text" id="sessionName" placeholder="New Session Name">
+        <button onclick="createSession()">Create Session</button>
+        <button onclick="fetchSessions()">Refresh List</button>
+    </div>
+
+    <div id="message"></div>
+
+    <h2>Active Sessions</h2>
+    <div id="sessions" class="session-list">Loading sessions...</div>
+
+    <script>
+        async function fetchSessions() {
+            const sessionsDiv = document.getElementById('sessions');
+            try {
+                const response = await fetch('/api/sessions');
+                const data = await response.json();
+                if (data.error) {
+                    sessionsDiv.textContent = 'Error: ' + data.error;
+                } else {
+                    sessionsDiv.textContent = data.sessions || 'No active sessions.';
+                }
+            } catch (err) {
+                sessionsDiv.textContent = 'Error fetching sessions: ' + err.message;
+            }
+        }
+
+        async function createSession() {
+            const nameInput = document.getElementById('sessionName');
+            const name = nameInput.value.trim();
+            const messageDiv = document.getElementById('message');
+
+            if (!name) {
+                messageDiv.innerHTML = '<p class="error">Please enter a session name.</p>';
+                return;
+            }
+
+            messageDiv.innerHTML = 'Creating session...';
+
+            try {
+                const response = await fetch('/api/session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    messageDiv.innerHTML = `<p class="success">${data.message}</p>`;
+                    nameInput.value = '';
+                    fetchSessions();
+                } else {
+                    messageDiv.innerHTML = `<p class="error">${data.error}</p>`;
+                }
+            } catch (err) {
+                messageDiv.innerHTML = `<p class="error">Error: ${err.message}</p>`;
+            }
+        }
+
+        // Initial fetch
+        fetchSessions();
+        // Refresh every 10 seconds
+        setInterval(fetchSessions, 10000);
+    </script>
 </body>
 </html>
