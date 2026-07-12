@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const ignore = require('ignore');
 
 /**
  * Configuration: Define what we consider "programming files" and "text files".
@@ -41,9 +42,11 @@ function countLines(filePath) {
  * 
  * @param {string} dir - The directory to scan.
  * @param {Array} results - Accumulator for found files.
+ * @param {Object} ig - An ignore object from the 'ignore' package.
+ * @param {string} rootDir - The root directory for calculating relative paths.
  * @returns {Array} - List of objects containing path and line count.
  */
-function scanDirectory(dir, results = []) {
+function scanDirectory(dir, results = [], ig = null, rootDir = '') {
     let files;
     try {
         files = fs.readdirSync(dir);
@@ -63,8 +66,14 @@ function scanDirectory(dir, results = []) {
             continue;
         }
 
+        const relativePath = path.relative(rootDir, fullPath);
+
+        if (ig && ig.ignores(relativePath)) {
+            continue;
+        }
+
         if (stat.isDirectory()) {
-            scanDirectory(fullPath, results);
+            scanDirectory(fullPath, results, ig, rootDir);
         } else {
             const ext = path.extname(fullPath).toLowerCase();
             
@@ -104,7 +113,18 @@ function main() {
     console.log(`Scanning directory: ${absoluteTargetDir}`);
     console.log('-------------------------------------------');
 
-    const largeProgrammingFiles = scanDirectory(absoluteTargetDir);
+    let ig = ignore();
+    const gitignorePath = path.join(absoluteTargetDir, '.gitignore');
+    if (fs.existsSync(gitignorePath)) {
+        try {
+            const gitignoreContent = fs.readFileSync(gitignorePath, 'utf8');
+            ig.add(gitignoreContent.split(/\r?\n/));
+        } catch (err) {
+            console.error(`Error reading .gitignore: ${err.message}`);
+        }
+    }
+
+    const largeProgrammingFiles = scanDirectory(absoluteTargetDir, [], ig, absoluteTargetDir);
 
     if (largeProgrammingFiles.length > 0) {
         console.log(`Found ${largeProgrammingFiles.length} programming file(s) with > 100 lines:\n`);
