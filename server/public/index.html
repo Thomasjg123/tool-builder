@@ -6,12 +6,36 @@
     <title>Tmux Web Wrapper</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <style>
-        body { font-family: sans-serif; margin: 20px; }
-        .session-list { background: #f4f4f4; padding: 10px; border-radius: 4px; white-space: pre-wrap; min-height: 50px; }
+        body { font-family: sans-serif; margin: 20px; display: flex; flex-direction: column; gap: 20px; }
+        .container { display: flex; gap: 20px; flex-wrap: wrap; }
+        .sidebar { flex: 1; min-width: 300px; }
+        .main { flex: 2; min-width: 500px; }
+        
+        .session-list { background: #f4f4f4; padding: 10px; border-radius: 4px; min-height: 200px; }
+        .session-item { display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid #ddd; }
+        .session-item:last-child { border-bottom: none; }
+        
         .controls { margin-bottom: 20px; }
         .error { color: red; }
         .success { color: green; }
         #message { margin-bottom: 10px; min-height: 1.2em; }
+
+        .terminal {
+            background: #000;
+            color: #0f0;
+            font-family: 'Courier New', Courier, monospace;
+            padding: 15px;
+            border-radius: 4px;
+            height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-size: 14px;
+            line-height: 1.4;
+            box-sizing: border-box;
+            max-width: 100%;
+        }
+
+        h1, h2 { margin: 0; }
     </style>
 </head>
 <body>
@@ -25,23 +49,93 @@
 
     <div id="message"></div>
 
-    <h2>Active Sessions</h2>
-    <div id="sessions" class="session-list">Loading sessions...</div>
+    <div class="container">
+        <div class="sidebar">
+            <h2>Active Sessions</h2>
+            <div id="sessions" class="session-list">Loading sessions...</div>
+        </div>
+
+        <div class="main">
+            <h2>Terminal Output</h2>
+            <div id="terminal" class="terminal">Select a session to view its output...</div>
+        </div>
+    </div>
 
     <script>
+        let currentSession = null;
+
         async function fetchSessions() {
             const sessionsDiv = document.getElementById('sessions');
             try {
                 const response = await fetch('/api/sessions');
                 const data = await response.json();
+                
                 if (data.error) {
                     sessionsDiv.textContent = 'Error: ' + data.error;
+                } else if (data.sessions.length === 0) {
+                    sessionsDiv.textContent = 'No active sessions.';
                 } else {
-                    sessionsDiv.textContent = data.sessions || 'No active sessions.';
+                    // Only rebuild if list actually changed (to avoid flicker, though for simplicity we'll rebuild)
+                    // To avoid flicker, we could compare with previous state, but let's just rebuild for now
+                    const oldSessions = Array.from(sessionsDiv.querySelectorAll('span')).map(s => s.textContent);
+                    const newSessions = data.sessions;
+
+                    if (JSON.stringify(oldSessions) !== JSON.stringify(newSessions)) {
+                        sessionsDiv.innerHTML = ''; 
+                        newSessions.forEach(name => {
+                            const item = document.createElement('div');
+                            item.className = 'session-item';
+
+                            const nameSpan = document.createElement('span');
+                            nameSpan.textContent = name;
+
+                            const btn = document.createElement('button');
+                            btn.textContent = 'View';
+                            btn.onclick = () => selectSession(name);
+
+                            item.appendChild(nameSpan);
+                            item.appendChild(btn);
+                            sessionsDiv.appendChild(item);
+                        });
+                    }
                 }
             } catch (err) {
                 sessionsDiv.textContent = 'Error fetching sessions: ' + err.message;
             }
+
+            if (currentSession) {
+                fetchOutput();
+            }
+        }
+
+        async function fetchOutput() {
+            if (!currentSession) return;
+            const terminal = document.getElementById('terminal');
+            try {
+                // First, try to get the size if we don't have it or it's the first time
+                const sizeResponse = await fetch(`/api/session/size/${currentSession}`);
+                const sizeData = await sizeResponse.json();
+                if (sizeData.width) {
+                    terminal.style.width = `${sizeData.width}ch`;
+                    terminal.style.minWidth = `${sizeData.width}ch`;
+                }
+
+                const response = await fetch(`/api/session/output/${currentSession}`);
+                const data = await response.json();
+                if (data.error) {
+                    terminal.textContent = 'Error: ' + data.error;
+                } else {
+                    terminal.textContent = data.output || 'No output available.';
+                }
+            } catch (err) {
+                terminal.textContent = 'Error fetching output: ' + err.message;
+            }
+        }
+
+        function selectSession(name) {
+            currentSession = name;
+            document.getElementById('terminal').textContent = `Connecting to ${name}...`;
+            fetchOutput();
         }
 
         async function createSession() {
@@ -78,8 +172,8 @@
 
         // Initial fetch
         fetchSessions();
-        // Refresh every 10 seconds
-        setInterval(fetchSessions, 10000);
+        // Refresh every 1 second
+        setInterval(fetchSessions, 1000);
     </script>
 </body>
 </html>
