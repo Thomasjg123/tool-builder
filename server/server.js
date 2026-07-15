@@ -7,102 +7,51 @@ const PORT = 3000;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+const validate = (req, res, next) => {
+    const name = req.params.name || req.body.name;
+    if (!name || typeof name !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(name)) {
+        return res.status(400).json({ error: 'Invalid session name' });
+    }
+    req.sessionName = name;
+    next();
+};
+
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.get('/api/sessions', (req, res) => {
-    exec('tmux ls', (error, stdout, stderr) => {
-        if (error) {
-            // tmux ls returns error if no sessions are running
-            return res.json({ sessions: [] });
-        }
-        
-        // Parse the tmux ls output into an array of session names
-        const lines = stdout.trim().split('\n');
-        const sessions = lines.map(line => {
-            const match = line.match(/^([^:]+):/);
-            return match ? match[1] : null;
-        }).filter(name => name !== null);
-
+    exec('tmux ls', (err, stdout) => {
+        const sessions = (err) ? [] : stdout.trim().split('\n').map(l => l.match(/^([^:]+):/)?.[1]).filter(Boolean);
         res.json({ sessions });
     });
 });
 
-app.get('/api/session/output/:name', (req, res) => {
-    const name = req.params.name;
-    if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
-        return res.status(400).send('Invalid session name');
-    }
-    exec(`tmux capture-pane -p -t ${name} -S -10 | sed '/^$/d'`, (error, stdout, stderr) => {
-        if (error) {
-            return res.status(500).json({ error: stderr || error.message });
-        }
-        res.json({ output: stdout });
+app.get('/api/session/output/:name', validate, (req, res) => {
+    exec(`tmux capture-pane -p -t ${req.sessionName} -S -10 | sed '/^$/d'`, (err, stdout, stderr) => {
+        err ? res.status(500).json({ error: stderr || err.message }) : res.json({ output: stdout });
     });
 });
 
-app.get('/api/session/size/:name', (req, res) => {
-    const name = req.params.name;
-    if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
-        return res.status(400).send('Invalid session name');
-    }
-    exec(`tmux list-panes -t ${name} -F "#{window_width} #{window_height}"`, (error, stdout, stderr) => {
-        if (error) {
-            return res.status(500).json({ error: stderr || error.message });
-        }
+app.get('/api/session/size/:name', validate, (req, res) => {
+    exec(`tmux list-panes -t ${req.sessionName} -F "#{window_width} #{window_height}"`, (err, stdout, stderr) => {
+        if (err) return res.status(500).json({ error: stderr || err.message });
         const [width, height] = stdout.trim().split(' ').map(Number);
         res.json({ width, height });
     });
 });
 
-app.post('/api/session', (req, res) => {
-    const sessionName = req.body.name;
-    if (!sessionName || typeof sessionName !== 'string') {
-        return res.status(400).json({ error: 'Invalid session name' });
-    }
-
-    // Sanitize sessionName to prevent command injection
-    if (!/^[a-zA-Z0-9_-]+$/.test(sessionName)) {
-        return res.status(400).json({ error: 'Invalid session name. Use only alphanumeric, underscores, or hyphens.' });
-    }
-
-    exec(`tmux new-session -d -s ${sessionName}`, (error, stdout, stderr) => {
-        if (error) {
-            return res.status(500).json({ error: stderr || error.message });
-        }
-        res.json({ message: `Session ${sessionName} created successfully` });
+app.post('/api/session', validate, (req, res) => {
+    exec(`tmux new-session -d -s ${req.sessionName}`, (err, stdout, stderr) => {
+        err ? res.status(500).json({ error: stderr || err.message }) : res.json({ message: `Session ${req.sessionName} created` });
     });
 });
 
-// ✅ Declare server at MODULE LEVEL (not inside a function)
-let server;
+const server = app.listen(PORT, '0.0.0.0', () => console.log(`✅ Server on http://0.0.0.0:${PORT}`));
 
-server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`✅ Server is running on http://0.0.0.0:${PORT}`);
-    console.log(`Press Ctrl+C to stop`);
-});
+const shutdown = (sig) => {
+    console.log(`\n⚠️  ${sig} received - shutting down...`);
+    server.close(() => { console.log('🛑 Server closed'); process.exit(0); });
+};
 
-
-// Graceful shutdown
-process.on('SIGINT', () => {
-    console.log('\n⚠️  SIGINT received - shutting down...');
-    server.close(() => {
-        console.log('🛑 Server closed');
-        process.exit(0);
-    });
-});
-
-process.on('SIGTERM', () => {
-    console.log('\n⚠️  SIGTERM received - shutting down...');
-    server.close(() => {
-        console.log('🛑 Server closed');
-        process.exit(0);
-    });
-});
-
-// Catch any uncaught errors
-process.on('uncaughtException', (err) => {
-    console.error('💥 Uncaught Exception:', err);
-    process.exit(1);
-});
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('uncaughtException', (err) => { console.error('💥 Uncaught Exception:', err); process.exit(1); });
