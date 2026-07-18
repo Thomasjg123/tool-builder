@@ -10,6 +10,8 @@ Before starting a new session, always check if a session with the same name is a
 tmux ls
 ```
 
+If a session with the intended name already exists, check its status. If it is running an old process, it is preferable to stop it using `C-c` via `tmux send-keys -t <session-name> C-c` before starting the new program.
+
 ## 2. Starting a Long-Running Task
 
 To start a new session in the background and run a command inside it:
