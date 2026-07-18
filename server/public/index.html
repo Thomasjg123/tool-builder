@@ -27,8 +27,20 @@
             <div id="sessions" class="session-list"></div>
         </div>
         <div class="main">
-            <h2>Output</h2>
+            <h2 id="output-title">Output</h2>
             <div id="terminal" class="terminal">Select a session</div>
+            <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center;">
+                <input type="text" id="cmd" placeholder="Command" style="flex: 1;" onkeydown="if(event.key === 'Enter') sendCmd(true)">
+                <button onclick="sendCmd(false)">Send</button>
+                <select id="specialKey">
+                    <option value="Enter">Enter</option>
+                    <option value="C-c">Ctrl+C</option>
+                    <option value="C-d">Ctrl+D</option>
+                    <option value="Esc">Esc</option>
+                    <option value="Tab">Tab</option>
+                </select>
+                <button onclick="sendSpecial()">Send Key</button>
+            </div>
         </div>
     </div>
     <script>
@@ -69,6 +81,32 @@
                 });
                 const data = await res.json();
                 res.ok ? (msg(data.message, 'success'), $('sName').value = '', fetchSessions()) : msg(data.error, 'error');
+            } catch (e) { msg(e.message, 'error'); }
+        }
+
+        async function sendCmd(appendEnter) {
+            let cmd = $('cmd').value.trim();
+            if (!cmd || !cur) return;
+            if (appendEnter) cmd += ' Enter';
+            try {
+                const res = await fetch(`/api/session/${cur}/send`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ key: cmd })
+                });
+                if (!res.ok) throw new Error((await res.json()).error);
+                $('cmd').value = '';
+            } catch (e) { msg(e.message, 'error'); }
+        }
+
+        async function sendSpecial() {
+            const key = $('specialKey').value;
+            if (!cur) return;
+            try {
+                const res = await fetch(`/api/session/${cur}/send`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ key })
+                });
+                if (!res.ok) throw new Error((await res.json()).error);
             } catch (e) { msg(e.message, 'error'); }
         }
 

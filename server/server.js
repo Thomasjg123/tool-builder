@@ -45,6 +45,17 @@ app.post('/api/session', validate, (req, res) => {
     });
 });
 
+app.post('/api/session/:name/send', validate, (req, res) => {
+    const { key } = req.body;
+    if (!key) return res.status(400).json({ error: 'No key provided' });
+    
+    const command = `tmux send-keys -t ${req.sessionName} ${key}`;
+    
+    exec(command, (err, stdout, stderr) => {
+        err ? res.status(500).json({ error: stderr || err.message }) : res.json({ message: 'Key sent' });
+    });
+});
+
 const server = app.listen(PORT, '0.0.0.0', () => console.log(`✅ Server on http://0.0.0.0:${PORT}`));
 
 const shutdown = (sig) => {
